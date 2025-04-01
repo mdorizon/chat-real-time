@@ -345,27 +345,27 @@ const MessageList: React.FC = () => {
                       </span>
                     </div>
                     <p className="text-gray-300 break-words">{message.text}</p>
-                    {(message.likes ?? 0) > 0 && (
-                      <div className="mt-1 flex">
-                        <button
-                          onClick={() => message.id && handleLike(message.id)}
-                          className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${
-                            message.likedBy?.includes(currentUser?.id || "")
-                              ? "bg-red-500/20 text-red-400"
-                              : "bg-gray-700 text-gray-300"
+                    <div className="mt-1 flex">
+                      <button
+                        onClick={() => message.id && handleLike(message.id)}
+                        className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${
+                          message.likedBy?.includes(currentUser?.id || "")
+                            ? "bg-indigo-600/20 text-indigo-200 border border-indigo-500"
+                            : message.likes && message.likes > 0
+                            ? "bg-gray-700 text-gray-200"
+                            : "bg-gray-700/60 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        }`}
+                      >
+                        <Heart
+                          className={`h-3.5 w-3.5 ${
+                            message.likes && message.likes > 0
+                              ? "fill-red-500 stroke-red-500"
+                              : "fill-none stroke-current"
                           }`}
-                        >
-                          <Heart
-                            className={`h-3.5 w-3.5 ${
-                              message.likedBy?.includes(currentUser?.id || "")
-                                ? "fill-red-400 stroke-red-400"
-                                : "fill-none stroke-current"
-                            }`}
-                          />
-                          <span>{message.likes ?? 0}</span>
-                        </button>
-                      </div>
-                    )}
+                        />
+                        <span>{message.likes ?? 0}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               ) : (
@@ -373,27 +373,27 @@ const MessageList: React.FC = () => {
                 <div className="flex pl-14">
                   <div className="flex-1 min-w-0">
                     <p className="text-gray-300 break-words">{message.text}</p>
-                    {(message.likes ?? 0) > 0 && (
-                      <div className="mt-1 flex">
-                        <button
-                          onClick={() => message.id && handleLike(message.id)}
-                          className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${
-                            message.likedBy?.includes(currentUser?.id || "")
-                              ? "bg-red-500/20 text-red-400"
-                              : "bg-gray-700 text-gray-300"
+                    <div className="mt-1 flex">
+                      <button
+                        onClick={() => message.id && handleLike(message.id)}
+                        className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${
+                          message.likedBy?.includes(currentUser?.id || "")
+                            ? "bg-indigo-600/20 text-indigo-200 border border-indigo-500"
+                            : message.likes && message.likes > 0
+                            ? "bg-gray-700 text-gray-200"
+                            : "bg-gray-700/60 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                        }`}
+                      >
+                        <Heart
+                          className={`h-3.5 w-3.5 ${
+                            message.likes && message.likes > 0
+                              ? "fill-red-500 stroke-red-500"
+                              : "fill-none stroke-current"
                           }`}
-                        >
-                          <Heart
-                            className={`h-3.5 w-3.5 ${
-                              message.likedBy?.includes(currentUser?.id || "")
-                                ? "fill-red-400 stroke-red-400"
-                                : "fill-none stroke-current"
-                            }`}
-                          />
-                          <span>{message.likes ?? 0}</span>
-                        </button>
-                      </div>
-                    )}
+                        />
+                        <span>{message.likes ?? 0}</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
