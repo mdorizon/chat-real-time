@@ -51,23 +51,27 @@ const MessageForm: React.FC = () => {
         <input
           {...register("text", { required: true })}
           type="text"
-          placeholder="Type your message..."
-          className="flex-1 rounded-lg border border-gray-300 px-4 py-2 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          placeholder="Envoyer un message..."
+          className="w-full rounded-lg bg-gray-700 border-none px-4 py-3 text-gray-200 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
         />
 
         <button
           type="submit"
           disabled={mutation.isPending || !allowToSend}
-          className={`absolute right-0 top-0 bottom-0 rounded-r-lg bg-indigo-500 px-4 text-white hover:bg-indigo-600 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all duration-300 cursor-pointer ${
+          className={`absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-white transition-colors duration-200 ${
             allowToSend ? "opacity-100" : "opacity-0"
           }`}
         >
-          {mutation.isPending ? "Sending..." : <SendHorizontal />}
+          {mutation.isPending ? (
+            <span className="text-sm">Envoi...</span>
+          ) : (
+            <SendHorizontal className="h-5 w-5" />
+          )}
         </button>
       </div>
       {mutation.isError && (
-        <p className="mt-2 text-sm text-red-600">
-          Error sending message. Please try again.
+        <p className="mt-2 text-sm text-red-400">
+          Erreur lors de l'envoi du message. Veuillez réessayer.
         </p>
       )}
     </form>

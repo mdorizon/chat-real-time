@@ -5,7 +5,7 @@ import { format, formatDistanceToNow, isToday } from "date-fns";
 import { fr } from "date-fns/locale";
 import { io } from "socket.io-client";
 import { useAuth } from "../../contexts/AuthContext";
-import { Heart } from "lucide-react";
+import { Heart, Hash } from "lucide-react";
 import toast from "react-hot-toast";
 
 interface RealtimeMessage {
@@ -43,7 +43,7 @@ interface MessageLikeUpdate {
 }
 
 const MessageList: React.FC = () => {
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, updateUserId } = useAuth();
   const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [realtimeMessages, setRealtimeMessages] = useState<RealtimeMessage[]>(
@@ -72,6 +72,7 @@ const MessageList: React.FC = () => {
         id: currentUser.id,
         email: currentUser.email,
       });
+      console.log("MessageList - User connected with ID:", currentUser.id);
     }
 
     socketRef.current.on("messageFromServer", (message: RealtimeMessage) => {
@@ -124,12 +125,58 @@ const MessageList: React.FC = () => {
       setUserConnections(connectionStatus);
     });
 
+    // Écouter l'événement de mise à jour d'ID utilisateur
+    socketRef.current.on("userIdUpdate", ({ oldId, newId, email }) => {
+      console.log(`MessageList - Mise à jour d'ID: ${oldId} -> ${newId}`);
+
+      // Si l'ID mis à jour correspond à l'utilisateur actuel, mettre à jour dans le contexte d'auth
+      if (
+        currentUser &&
+        currentUser.id === oldId &&
+        currentUser.email === email
+      ) {
+        updateUserId(oldId, newId);
+      }
+
+      // Mettre à jour les messages en temps réel si l'utilisateur a des messages
+      setRealtimeMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.user && msg.user.id === oldId) {
+            return {
+              ...msg,
+              user: {
+                ...msg.user,
+                id: newId,
+              },
+            };
+          }
+          return msg;
+        })
+      );
+
+      // Mettre à jour les likes dans les messages
+      setRealtimeMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.likedBy && msg.likedBy.includes(oldId)) {
+            const updatedLikedBy = msg.likedBy.map((id) =>
+              id === oldId ? newId : id
+            );
+            return {
+              ...msg,
+              likedBy: updatedLikedBy,
+            };
+          }
+          return msg;
+        })
+      );
+    });
+
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
       }
     };
-  }, [queryClient, currentUser]);
+  }, [queryClient, currentUser, updateUserId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -243,58 +290,116 @@ const MessageList: React.FC = () => {
 
   return (
     <div className="relative">
-      <div className="space-y-4 pt-2">
-        {allMessages.map((message, index) => (
-          <div
-            key={message.id || `realtime-${index}`}
-            className="rounded-lg bg-white p-4 shadow-sm"
-          >
-            <div className="flex items-start gap-3">
-              <div className="flex-shrink-0">
-                <div className="relative">
-                  <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold">
-                    {message.user?.email?.[0].toUpperCase()}
+      {/* Message de bienvenue */}
+      <div className="px-4 pt-6 pb-4 text-center">
+        <div className="h-16 w-16 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+          <Hash className="h-8 w-8 text-white" />
+        </div>
+        <h1 className="text-2xl font-bold text-white mb-1">
+          Bienvenue dans #général !
+        </h1>
+        <p className="text-gray-300 mb-4">C'est le début du salon #général.</p>
+        <div className="h-px bg-gray-700 w-full max-w-md mx-auto my-6"></div>
+      </div>
+
+      <div className="space-y-0">
+        {allMessages.map((message, index) => {
+          // Vérifier si le message suivant est du même utilisateur
+          const nextMessage = allMessages[index + 1];
+          const isGrouped =
+            nextMessage &&
+            nextMessage.user?.id === message.user?.id &&
+            new Date(nextMessage.createdAt).getTime() -
+              new Date(message.createdAt).getTime() <
+              300000; // 5 minutes
+
+          return (
+            <div
+              key={message.id || `realtime-${index}`}
+              className="group px-4 py-0.5 hover:bg-gray-750/30"
+            >
+              {/* Si premier message ou nouveau groupe, afficher l'avatar et le nom */}
+              {index === 0 || !isGrouped ? (
+                <div className="flex pt-4">
+                  <div className="flex-shrink-0 pt-0.5 mr-4">
+                    <div className="relative">
+                      <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold">
+                        {message.user?.email?.[0].toUpperCase()}
+                      </div>
+                      <div
+                        className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-800 ${
+                          message.user?.connected
+                            ? "bg-green-500"
+                            : "bg-gray-400"
+                        }`}
+                      />
+                    </div>
                   </div>
-                  <div
-                    className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${
-                      message.user?.connected ? "bg-green-500" : "bg-gray-400"
-                    }`}
-                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-gray-100">
+                        {message.user?.email?.split("@")[0]}
+                      </span>
+                      <span className="text-xs text-gray-400">
+                        {formatMessageDate(message.createdAt)}
+                      </span>
+                    </div>
+                    <p className="text-gray-300 break-words">{message.text}</p>
+                    {(message.likes ?? 0) > 0 && (
+                      <div className="mt-1 flex">
+                        <button
+                          onClick={() => message.id && handleLike(message.id)}
+                          className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${
+                            message.likedBy?.includes(currentUser?.id || "")
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-gray-700 text-gray-300"
+                          }`}
+                        >
+                          <Heart
+                            className={`h-3.5 w-3.5 ${
+                              message.likedBy?.includes(currentUser?.id || "")
+                                ? "fill-red-400 stroke-red-400"
+                                : "fill-none stroke-current"
+                            }`}
+                          />
+                          <span>{message.likes ?? 0}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-gray-900">
-                    {message.user?.email}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {formatMessageDate(message.createdAt)}
-                  </span>
+              ) : (
+                // Message groupé (même utilisateur)
+                <div className="flex pl-14">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-300 break-words">{message.text}</p>
+                    {(message.likes ?? 0) > 0 && (
+                      <div className="mt-1 flex">
+                        <button
+                          onClick={() => message.id && handleLike(message.id)}
+                          className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg ${
+                            message.likedBy?.includes(currentUser?.id || "")
+                              ? "bg-red-500/20 text-red-400"
+                              : "bg-gray-700 text-gray-300"
+                          }`}
+                        >
+                          <Heart
+                            className={`h-3.5 w-3.5 ${
+                              message.likedBy?.includes(currentUser?.id || "")
+                                ? "fill-red-400 stroke-red-400"
+                                : "fill-none stroke-current"
+                            }`}
+                          />
+                          <span>{message.likes ?? 0}</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <p className="text-gray-800">{message.text}</p>
-                <div className="mt-2 flex items-center gap-2">
-                  <button
-                    onClick={() => message.id && handleLike(message.id)}
-                    className={`flex items-center gap-1 text-sm px-2 py-1 rounded-full transition-colors ${
-                      message.likedBy?.includes(currentUser?.id || "")
-                        ? "text-red-500 bg-red-50 hover:bg-red-100"
-                        : "text-gray-500 hover:bg-gray-100"
-                    }`}
-                  >
-                    <Heart
-                      className={`h-4 w-4 ${
-                        message.likedBy?.includes(currentUser?.id || "")
-                          ? "fill-red-500 stroke-red-500"
-                          : "fill-none stroke-current"
-                      }`}
-                    />
-                    <span className="ml-1">{message.likes || 0}</span>
-                  </button>
-                </div>
-              </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
         <div ref={messagesEndRef} />
       </div>
     </div>

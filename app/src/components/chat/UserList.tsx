@@ -24,13 +24,14 @@ type UserType = {
 
 const UserList: React.FC = () => {
   const [connectedUsers, setConnectedUsers] = useState<ClientType[]>([]);
-  const { user } = useAuth();
+  const { user, updateUserId } = useAuth();
 
   useEffect(() => {
     const socket = io("http://localhost:8000");
     socket.on("connect", () => {
       if (!user) return;
       socket.emit("clientConnected", user);
+      console.log("Utilisateur connecté au websocket avec ID:", user.id);
     });
 
     socket.on("connectedClients", (data: ClientType[]) => {
@@ -40,13 +41,22 @@ const UserList: React.FC = () => {
         lastConnected: new Date(user.lastConnected),
       }));
       setConnectedUsers(usersWithDates);
-      console.log("a user connected or disconnected", usersWithDates);
+      console.log("Liste des utilisateurs mise à jour:", usersWithDates);
+    });
+
+    // Écouter l'événement de mise à jour d'ID utilisateur
+    socket.on("userIdUpdate", ({ oldId, newId, email }) => {
+      console.log(`Mise à jour d'ID reçue du serveur: ${oldId} -> ${newId}`);
+      // Si l'ID mis à jour correspond à l'utilisateur actuel, mettre à jour dans le contexte d'auth
+      if (user && user.id === oldId && user.email === email) {
+        updateUserId(oldId, newId);
+      }
     });
 
     return () => {
       socket.disconnect();
     };
-  }, [user]);
+  }, [user, updateUserId]);
 
   const formatLastSeen = (date: Date) => {
     return `Déconnecté depuis ${formatDistanceToNow(date, { locale: fr })}`;
@@ -65,35 +75,83 @@ const UserList: React.FC = () => {
     return 0;
   });
 
+  const onlineUsers = sortedUsers.filter((client) => client.connected);
+  const offlineUsers = sortedUsers.filter((client) => !client.connected);
+
   return (
-    <div className="flex flex-wrap gap-3 p-4 items-center h-full">
-      {sortedUsers.map((client) => (
-        <TooltipProvider key={client.clientId}>
-          <Tooltip>
-            <TooltipTrigger>
-              <div className="relative group">
-                <div className="h-10 w-10 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold">
-                  {client.user.email[0].toUpperCase()}
-                </div>
-                <div
-                  className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white
-                    ${client.connected ? "bg-green-500" : "bg-gray-400"}`}
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent>
-              <div className="text-sm">
-                <p className="font-semibold">{client.user.email}</p>
-                {!client.connected && (
-                  <p className="text-gray-400">
-                    {formatLastSeen(client.lastConnected)}
-                  </p>
-                )}
-              </div>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ))}
+    <div className="px-2 py-4">
+      {/* Section En ligne */}
+      <div className="mb-4">
+        <div className="px-2 mb-2">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+            En ligne — {onlineUsers.length}
+          </span>
+        </div>
+        <div className="space-y-0.5">
+          {onlineUsers.map((client) => (
+            <TooltipProvider key={client.clientId}>
+              <Tooltip>
+                <TooltipTrigger>
+                  <div className="flex items-center gap-3 p-2 hover:bg-gray-700 rounded-lg cursor-pointer transition-colors duration-200">
+                    <div className="relative">
+                      <div className="h-8 w-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-semibold">
+                        {client.user.email[0].toUpperCase()}
+                      </div>
+                      <div className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-gray-800 bg-green-500" />
+                    </div>
+                    <span className="text-gray-300 text-sm truncate">
+                      {client.user.email}
+                    </span>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p className="font-semibold">{client.user.email}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          ))}
+        </div>
+      </div>
+
+      {/* Section Hors ligne */}
+      {offlineUsers.length > 0 && (
+        <div>
+          <div className="px-2 mb-2">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
+              Hors ligne — {offlineUsers.length}
+            </span>
+          </div>
+          <div className="space-y-0.5">
+            {offlineUsers.map((client) => (
+              <TooltipProvider key={client.clientId}>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <div className="flex items-center gap-3 p-2 hover:bg-gray-700 rounded-lg cursor-pointer transition-colors duration-200 opacity-70">
+                      <div className="relative">
+                        <div className="h-8 w-8 rounded-full bg-gray-600 flex items-center justify-center text-white font-semibold">
+                          {client.user.email[0].toUpperCase()}
+                        </div>
+                        <div className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-gray-800 bg-gray-400" />
+                      </div>
+                      <span className="text-gray-400 text-sm truncate">
+                        {client.user.email}
+                      </span>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <div className="text-sm">
+                      <p className="font-semibold">{client.user.email}</p>
+                      <p className="text-gray-400">
+                        {formatLastSeen(client.lastConnected)}
+                      </p>
+                    </div>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

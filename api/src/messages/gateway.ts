@@ -8,6 +8,7 @@ import { Server, Socket } from 'socket.io';
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { Injectable } from '@nestjs/common';
+import { UsersService } from '../users/users.service';
 
 type ClientType = {
   clientId: string;
@@ -37,7 +38,10 @@ export class MessagesGateway implements OnGatewayDisconnect {
   @WebSocketServer()
   server: Server;
 
-  constructor(private readonly messagesService: MessagesService) {}
+  constructor(
+    private readonly messagesService: MessagesService,
+    private readonly usersService: UsersService,
+  ) {}
 
   public connectedClients: ClientType[] = [];
 
@@ -123,30 +127,79 @@ export class MessagesGateway implements OnGatewayDisconnect {
   }
 
   @SubscribeMessage('clientConnected')
-  handleClientConnected(client: CustomSocket, user: UserType): void {
+  async handleClientConnected(
+    client: CustomSocket,
+    user: UserType,
+  ): Promise<void> {
+    // Vérifier d'abord si l'utilisateur existe déjà dans la base de données
+    let userId = user.id;
+
+    try {
+      // Essayer de trouver l'utilisateur par email dans la base de données
+      const dbUser = await this.usersService.findByEmail(user.email);
+      if (dbUser) {
+        // Si l'utilisateur existe, utiliser son ID de la base de données
+        userId = dbUser.id;
+        console.log(
+          `Utilisateur existant trouvé avec l'email ${user.email}, ID: ${userId}`,
+        );
+      }
+    } catch (error) {
+      // Si l'utilisateur n'existe pas, nous utilisons l'ID fourni
+      console.log(
+        `Aucun utilisateur trouvé avec l'email ${user.email}, utilisation de l'ID fourni: ${userId}`,
+      );
+    }
+
+    // Mettre à jour l'identifiant utilisateur si nécessaire
+    const userWithCorrectId = {
+      ...user,
+      id: userId,
+    };
+
+    // Vérifier si cet utilisateur est déjà connecté dans un autre client
     const existingUserIndex = this.connectedClients.findIndex(
-      (clientObj) => clientObj.user.id === user.id,
+      (clientObj) => clientObj.user.id === userId,
     );
 
     if (existingUserIndex !== -1) {
+      // Si l'utilisateur est déjà connecté ailleurs, mettre à jour son état
       this.connectedClients[existingUserIndex] = {
         clientId: client.id,
-        user: user,
+        user: userWithCorrectId,
         connected: true,
         lastConnected: new Date(),
       };
+      console.log(
+        `Utilisateur ${userWithCorrectId.email} reconnecté (ID: ${userId})`,
+      );
     } else {
+      // Sinon, ajouter un nouveau client
       this.connectedClients.push({
         clientId: client.id,
-        user: user,
+        user: userWithCorrectId,
         connected: true,
         lastConnected: new Date(),
       });
+      console.log(
+        `Nouvel utilisateur connecté: ${userWithCorrectId.email} (ID: ${userId})`,
+      );
     }
 
     // Stocker l'userId dans les données du socket
-    client.data.userId = user.id;
+    client.data.userId = userId;
+
+    // Émettre l'état mis à jour à tous les clients
     this.server.emit('connectedClients', this.connectedClients);
+
+    // Si l'ID était différent de celui fourni par le client, informer le client de mettre à jour son ID
+    if (userId !== user.id) {
+      client.emit('userIdUpdate', {
+        oldId: user.id,
+        newId: userId,
+        email: user.email,
+      });
+    }
   }
 
   handleDisconnect(client: Socket): void {
