@@ -1,0 +1,20 @@
+version: '3.1'
+services:
+  adminer:
+    image: adminer
+    container_name: adminer-worktransfer
+    environment:
+      ADMINER_DESIGN: pepa-linha
+      ADMINER_DEFAULT_SERVER: database
+    ports:
+      - 8080:8080
+  database:
+    image: postgres
+    container_name: postgres-worktransfer
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: test
