@@ -12,10 +12,13 @@ import {
 import { MessagesService } from './messages.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 
-interface RequestWithUser extends Request {
-  user: JwtPayload;
+// Interface simplifiée pour req.user optionnel
+interface RequestWithOptionalUser {
+  user?: {
+    id: string;
+    email: string;
+  };
 }
 
 @Controller('messages')
@@ -23,13 +26,17 @@ export class MessagesController {
   constructor(private readonly messagesService: MessagesService) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
-  create(
-    @Request() req: RequestWithUser,
+  async create(
+    @Request() req: RequestWithOptionalUser,
     @Body() createMessageDto: CreateMessageDto,
   ) {
-    console.log('createMessageDto : ', req.user.id);
-    return this.messagesService.create(createMessageDto, req.user.id);
+    if (req.user) {
+      console.log('Message authentifié avec userId:', req.user.id);
+      return this.messagesService.create(createMessageDto, req.user.id);
+    }
+
+    console.log('Message anonyme');
+    return this.messagesService.createAnonymous(createMessageDto);
   }
 
   @Get()

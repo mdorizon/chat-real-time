@@ -28,12 +28,46 @@ export class MessagesService {
     return this.messagesRepository.save(message);
   }
 
-  findAll(): Promise<Message[]> {
+  async createAnonymous(createMessageDto: CreateMessageDto): Promise<Message> {
+    console.log('createMessageDto anonyme : ', createMessageDto);
+
+    // Si des informations utilisateur sont fournies dans le DTO
+    if (createMessageDto.user && createMessageDto.user.id) {
+      try {
+        // Essayer de trouver l'utilisateur par ID
+        const user = await this.usersService.findOne(createMessageDto.user.id);
+
+        // Si l'utilisateur est trouvé, créer un message avec cet utilisateur
+        const message = this.messagesRepository.create({
+          text: createMessageDto.text,
+          user,
+          likes: 0,
+          likedBy: [],
+        });
+
+        return this.messagesRepository.save(message);
+      } catch (err) {
+        console.log(
+          'Utilisateur non trouvé dans la base de données, création de message sans utilisateur',
+          err,
+        );
+      }
+    }
+
+    // Si aucune information utilisateur n'est fournie ou si l'utilisateur n'est pas trouvé
+    const message = this.messagesRepository.create({
+      text: createMessageDto.text,
+      likes: 0,
+      likedBy: [],
+    });
+
+    return this.messagesRepository.save(message);
+  }
+
+  async findAll(): Promise<Message[]> {
     return this.messagesRepository.find({
       relations: ['user'],
-      order: {
-        createdAt: 'ASC',
-      },
+      order: { createdAt: 'ASC' },
     });
   }
 
@@ -52,26 +86,35 @@ export class MessagesService {
     id: string,
     updateMessageDto: CreateMessageDto,
   ): Promise<Message> {
+    await this.findOne(id);
     await this.messagesRepository.update(id, updateMessageDto);
     return this.findOne(id);
   }
 
   async remove(id: string): Promise<void> {
-    await this.messagesRepository.softDelete(id);
+    const result = await this.messagesRepository.delete(id);
+    if (result.affected === 0) {
+      throw new NotFoundException(`Message with ID ${id} not found`);
+    }
   }
 
   async toggleLike(messageId: string, userId: string): Promise<Message> {
     const message = await this.findOne(messageId);
-    const likedByIndex = message.likedBy.indexOf(userId);
 
-    if (likedByIndex === -1) {
-      // L'utilisateur n'a pas encore liké
-      message.likes += 1;
+    if (!message.likedBy) {
+      message.likedBy = [];
+    }
+
+    const userIndex = message.likedBy.indexOf(userId);
+
+    if (userIndex === -1) {
+      // L'utilisateur n'a pas encore liké ce message
       message.likedBy.push(userId);
+      message.likes += 1;
     } else {
-      // L'utilisateur retire son like
+      // L'utilisateur a déjà liké ce message, on retire son like
+      message.likedBy.splice(userIndex, 1);
       message.likes -= 1;
-      message.likedBy.splice(likedByIndex, 1);
     }
 
     return this.messagesRepository.save(message);

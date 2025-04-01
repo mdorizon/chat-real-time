@@ -17,7 +17,7 @@ export class Message {
   @Column('text')
   text: string;
 
-  @ManyToOne(() => User, (user) => user.messages)
+  @ManyToOne(() => User, (user) => user.messages, { nullable: true })
   user: User;
 
   @Column('int', { default: 0 })
