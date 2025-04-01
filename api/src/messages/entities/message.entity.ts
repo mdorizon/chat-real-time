@@ -20,6 +20,12 @@ export class Message {
   @ManyToOne(() => User, (user) => user.messages)
   user: User;
 
+  @Column('int', { default: 0 })
+  likes: number;
+
+  @Column('simple-array', { nullable: true, default: [] })
+  likedBy: string[];
+
   @CreateDateColumn({ type: 'timestamptz' })
   createdAt: Date;
 

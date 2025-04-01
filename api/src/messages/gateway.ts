@@ -52,6 +52,8 @@ export class MessagesGateway implements OnGatewayDisconnect {
     const messageToSend = {
       text: message,
       createdAt: new Date(),
+      likes: 0,
+      likedBy: [],
       user: connectedClient
         ? {
             ...connectedClient.user,
@@ -77,6 +79,46 @@ export class MessagesGateway implements OnGatewayDisconnect {
           details: error instanceof Error ? error.message : 'Erreur inconnue',
         });
       }
+    }
+  }
+
+  @SubscribeMessage('toggleLike')
+  async handleToggleLike(
+    client: CustomSocket,
+    payload: { messageId: string },
+  ): Promise<void> {
+    if (!client.data.userId) {
+      client.emit('likeError', {
+        error: 'Vous devez être connecté pour liker un message',
+      });
+      return;
+    }
+
+    try {
+      console.log(
+        'Toggling like for message:',
+        payload.messageId,
+        'by user:',
+        client.data.userId,
+      );
+      const updatedMessage = await this.messagesService.toggleLike(
+        payload.messageId,
+        client.data.userId,
+      );
+      console.log('Updated message:', updatedMessage);
+
+      // Émettre la mise à jour à tous les clients
+      this.server.emit('messageLikeUpdate', {
+        messageId: updatedMessage.id,
+        likes: updatedMessage.likes,
+        likedBy: updatedMessage.likedBy,
+      });
+    } catch (error: unknown) {
+      console.error('Error toggling like:', error);
+      client.emit('likeError', {
+        error: "Le like n'a pas pu être enregistré",
+        details: error instanceof Error ? error.message : 'Erreur inconnue',
+      });
     }
   }
 

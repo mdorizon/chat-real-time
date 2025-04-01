@@ -22,6 +22,8 @@ export class MessagesService {
     const message = this.messagesRepository.create({
       ...createMessageDto,
       user,
+      likes: 0,
+      likedBy: [],
     });
     return this.messagesRepository.save(message);
   }
@@ -56,5 +58,22 @@ export class MessagesService {
 
   async remove(id: string): Promise<void> {
     await this.messagesRepository.softDelete(id);
+  }
+
+  async toggleLike(messageId: string, userId: string): Promise<Message> {
+    const message = await this.findOne(messageId);
+    const likedByIndex = message.likedBy.indexOf(userId);
+
+    if (likedByIndex === -1) {
+      // L'utilisateur n'a pas encore liké
+      message.likes += 1;
+      message.likedBy.push(userId);
+    } else {
+      // L'utilisateur retire son like
+      message.likes -= 1;
+      message.likedBy.splice(likedByIndex, 1);
+    }
+
+    return this.messagesRepository.save(message);
   }
 }

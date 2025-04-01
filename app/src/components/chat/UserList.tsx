@@ -1,5 +1,5 @@
 import { useAuth } from "@/contexts/AuthContext";
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";

@@ -1,14 +1,19 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { messageService, Message } from "../../services/messageService";
 import { format, formatDistanceToNow, isToday } from "date-fns";
 import { fr } from "date-fns/locale";
 import { io } from "socket.io-client";
+import { useAuth } from "../../contexts/AuthContext";
+import { Heart } from "lucide-react";
+import toast from "react-hot-toast";
 
 interface RealtimeMessage {
   id?: string;
   text: string;
   createdAt: Date;
+  likes?: number;
+  likedBy?: string[];
   user?: {
     id: string;
     email: string;
@@ -31,7 +36,15 @@ interface ConnectedClient {
   lastConnected: Date;
 }
 
+interface MessageLikeUpdate {
+  messageId: string;
+  likes: number;
+  likedBy: string[];
+}
+
 const MessageList: React.FC = () => {
+  const { user: currentUser } = useAuth();
+  const queryClient = useQueryClient();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [realtimeMessages, setRealtimeMessages] = useState<RealtimeMessage[]>(
     []
@@ -39,6 +52,7 @@ const MessageList: React.FC = () => {
   const [userConnections, setUserConnections] = useState<
     Record<string, boolean>
   >({});
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
 
   const {
     data: dbMessages,
@@ -50,28 +64,59 @@ const MessageList: React.FC = () => {
   });
 
   useEffect(() => {
-    const socket = io("http://localhost:8000");
+    socketRef.current = io("http://localhost:8000");
 
-    socket.on("messageFromServer", (message: RealtimeMessage) => {
-      // Vérifier que le message n'est pas vide et qu'il a un texte
+    // Connecter l'utilisateur au WebSocket
+    if (currentUser) {
+      socketRef.current.emit("clientConnected", {
+        id: currentUser.id,
+        email: currentUser.email,
+      });
+    }
+
+    socketRef.current.on("messageFromServer", (message: RealtimeMessage) => {
       if (message && message.text && message.text !== "newMessage") {
-        // S'assurer que la date est un objet Date
         const messageWithDate = {
           ...message,
           createdAt: new Date(message.createdAt),
+          likes: 0,
+          likedBy: [],
         };
         setRealtimeMessages((prev) => [...prev, messageWithDate]);
       }
     });
 
-    socket.on("userConnectionUpdate", (update: UserConnectionUpdate) => {
-      setUserConnections((prev) => ({
-        ...prev,
-        [update.userId]: update.connected,
-      }));
-    });
+    socketRef.current.on(
+      "messageLikeUpdate",
+      ({ messageId, likes, likedBy }: MessageLikeUpdate) => {
+        // Mettre à jour les messages en temps réel
+        setRealtimeMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === messageId ? { ...msg, likes, likedBy } : msg
+          )
+        );
 
-    socket.on("connectedClients", (clients: ConnectedClient[]) => {
+        // Mettre à jour les messages de la base de données
+        queryClient.setQueryData<Message[]>(["messages"], (oldData) => {
+          if (!oldData) return oldData;
+          return oldData.map((msg) =>
+            msg.id === messageId ? { ...msg, likes, likedBy } : msg
+          );
+        });
+      }
+    );
+
+    socketRef.current.on(
+      "userConnectionUpdate",
+      (update: UserConnectionUpdate) => {
+        setUserConnections((prev) => ({
+          ...prev,
+          [update.userId]: update.connected,
+        }));
+      }
+    );
+
+    socketRef.current.on("connectedClients", (clients: ConnectedClient[]) => {
       const connectionStatus: Record<string, boolean> = {};
       clients.forEach((client) => {
         connectionStatus[client.user.id] = client.connected;
@@ -80,9 +125,11 @@ const MessageList: React.FC = () => {
     });
 
     return () => {
-      socket.disconnect();
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
-  }, []);
+  }, [queryClient, currentUser]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -106,6 +153,58 @@ const MessageList: React.FC = () => {
 
     // Sinon on affiche le temps relatif
     return formatDistanceToNow(messageDate, { locale: fr, addSuffix: true });
+  };
+
+  const handleLike = (messageId: string) => {
+    if (!currentUser || !socketRef.current) {
+      toast.error("Vous devez être connecté pour liker un message");
+      return;
+    }
+
+    try {
+      socketRef.current.emit("toggleLike", { messageId });
+
+      // Fonction de mise à jour pour un message
+      const updateMessage = (msg: Message) => {
+        if (msg.id === messageId) {
+          const hasLiked = msg.likedBy?.includes(currentUser.id) || false;
+          return {
+            ...msg,
+            likes: (msg.likes || 0) + (hasLiked ? -1 : 1),
+            likedBy: hasLiked
+              ? (msg.likedBy || []).filter((id) => id !== currentUser.id)
+              : [...(msg.likedBy || []), currentUser.id],
+          };
+        }
+        return msg;
+      };
+
+      // Mise à jour optimiste des messages en temps réel
+      setRealtimeMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id === messageId) {
+            const hasLiked = msg.likedBy?.includes(currentUser.id) || false;
+            return {
+              ...msg,
+              likes: (msg.likes || 0) + (hasLiked ? -1 : 1),
+              likedBy: hasLiked
+                ? (msg.likedBy || []).filter((id) => id !== currentUser.id)
+                : [...(msg.likedBy || []), currentUser.id],
+            };
+          }
+          return msg;
+        })
+      );
+
+      // Mise à jour optimiste des messages de la base de données
+      queryClient.setQueryData<Message[]>(["messages"], (oldData) => {
+        if (!oldData) return oldData;
+        return oldData.map(updateMessage);
+      });
+    } catch (error) {
+      console.error("Erreur lors du like:", error);
+      toast.error("Une erreur est survenue lors du like");
+    }
   };
 
   if (isLoading) {
@@ -173,6 +272,25 @@ const MessageList: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-gray-800">{message.text}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <button
+                    onClick={() => message.id && handleLike(message.id)}
+                    className={`flex items-center gap-1 text-sm px-2 py-1 rounded-full transition-colors ${
+                      message.likedBy?.includes(currentUser?.id || "")
+                        ? "text-red-500 bg-red-50 hover:bg-red-100"
+                        : "text-gray-500 hover:bg-gray-100"
+                    }`}
+                  >
+                    <Heart
+                      className={`h-4 w-4 ${
+                        message.likedBy?.includes(currentUser?.id || "")
+                          ? "fill-red-500 stroke-red-500"
+                          : "fill-none stroke-current"
+                      }`}
+                    />
+                    <span className="ml-1">{message.likes || 0}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
